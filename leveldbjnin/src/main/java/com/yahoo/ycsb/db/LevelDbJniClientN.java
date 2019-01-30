@@ -4,11 +4,9 @@
 
 package com.yahoo.ycsb.db;
 
-import static org.fusesource.leveldbjni.JniDBFactory.factory;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -18,8 +16,6 @@ import java.util.Set;
 import java.util.Vector;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.iq80.leveldb.DBIterator;
-import org.iq80.leveldb.Options;
 
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
@@ -31,25 +27,10 @@ import com.yahoo.ycsb.Status;
  * LevelDBJni client for YCSB framework.
  */
 public class LevelDbJniClientN extends DB {
-
-  private static org.iq80.leveldb.DB db = null;
-
-  private static final  AtomicInteger INITCOUNT = new AtomicInteger(0);
-
-  private static synchronized  void getDBInstance() {
-    if (db == null) {
-      Options options = new Options();
-      // options.cacheSize(100 * 1048576); // 100MB cache
-      options.createIfMissing(true);
-      options.writeBufferSize(8 << 20);
-      try {
-        db = factory.open(new File("leveldb_database"), options);
-      } catch (IOException e) {
-        System.out.println("Failed to open database");
-        e.printStackTrace();
-      }
-    }
+  static{
+    System.loadLibrary("Client");
   }
+  private static final  AtomicInteger INITCOUNT = new AtomicInteger(0);
 
   private static byte[] mapToBytes(Map<String, String> map)
       throws IOException {
@@ -72,25 +53,22 @@ public class LevelDbJniClientN extends DB {
    * Initialize any state for this DB. Called once per DB instance; there is
    * one DB instance per client thread.
    */
+  private native void cinit();
   @Override
   public void init() throws DBException {
     INITCOUNT.incrementAndGet();
-    getDBInstance();
+    cinit();
   }
 
   /**
    * Cleanup any state for this DB. Called once per DB instance; there is one
    * DB instance per client thread.
    */
+  private native void ccleanup();
   @Override
   public void cleanup() throws DBException {
     if (INITCOUNT.decrementAndGet() <= 0) {
-      try {
-        db.close();
-      } catch (IOException e) {
-        System.out.println("Failed to close db");
-        e.printStackTrace();
-      }
+      ccleanup();
     }
   }
 
@@ -104,9 +82,10 @@ public class LevelDbJniClientN extends DB {
    * @return Zero on success, a non-zero error code on error. See this class's
    *         description for a discussion of error codes.
    */
+  private native void cdelete(String key);
   @Override
   public Status delete(String table, String key) {
-    db.delete(key.getBytes());
+    cdelete(key);
     return Status.OK;
   }
 
@@ -124,22 +103,23 @@ public class LevelDbJniClientN extends DB {
    * @return Zero on success, a non-zero error code on error. See this class's
    *         description for a discussion of error codes.
    */
+  private native void cinsert(String key, String values);
   @Override
   public Status insert(final String table, final String key,
       final Map<String, ByteIterator> values) {
+    //stringvalues convert to String
     Map<String, String> stringValues = StringByteIterator
         .getStringMap(values);
-    try {
-      db.put(key.getBytes(), mapToBytes(stringValues));
-    } catch (org.iq80.leveldb.DBException e) {
-      System.out.println("Failed to insert " + key);
-      e.printStackTrace();
-      return Status.ERROR;
-    } catch (IOException e) {
+    try{
+      String value = new String(mapToBytes(stringValues));
+      cinsert(key, value);
+    }catch (IOException e) {
       System.out.println("Failed to insert " + key);
       e.printStackTrace();
       return Status.ERROR;
     }
+    
+    
     return Status.OK;
   }
 
@@ -157,26 +137,12 @@ public class LevelDbJniClientN extends DB {
    *            A HashMap of field/value pairs for the result
    * @return Zero on success, a non-zero error code on error or "not found".
    */
+   //do i need to store the return String?
+  private native void cread(String key);
   @Override
   public Status read(final String table, final String key, final Set<String> fields,
       final Map<String, ByteIterator> result) {
-    byte[] value = db.get(key.getBytes());
-    if (value == null) {
-      return Status.ERROR;
-    }
-    Map<String, String> map;
-    try {
-      map = bytesToMap(value);
-    } catch (IOException e) {
-      System.out.println("Failed to read " + key);
-      e.printStackTrace();
-      return Status.ERROR;
-    } catch (ClassNotFoundException e) {
-      System.out.println("Failed to read " + key);
-      e.printStackTrace();
-      return Status.ERROR;
-    }
-    StringByteIterator.putAllAsByteIterators(result, map);
+    cread(key);
     return Status.OK;
   }
 
@@ -194,39 +160,12 @@ public class LevelDbJniClientN extends DB {
    * @return Zero on success, a non-zero error code on error. See this class's
    *         description for a discussion of error codes.
    */
+  private native void cupdate(String key, String value);
   @Override
   public Status update(final String table, final String key,
       final Map<String, ByteIterator> values) {
-    byte[] existingBytes = db.get(key.getBytes());
-    Map<String, String> existingValues;
-    if (existingBytes != null) {
-      try {
-        existingValues = bytesToMap(existingBytes);
-      } catch (IOException e) {
-        System.out.println("Failed to read for update " + key);
-        e.printStackTrace();
-        return Status.ERROR;
-      } catch (ClassNotFoundException e) {
-        System.out.println("Failed to read for update " + key);
-        e.printStackTrace();
-        return Status.ERROR;
-      }
-    } else {
-      existingValues = new HashMap<String, String>();
-    }
-    Map<String, String> newValues = StringByteIterator.getStringMap(values);
-    existingValues.putAll(newValues);
-    try {
-      db.put(key.getBytes(), mapToBytes(existingValues));
-    } catch (org.iq80.leveldb.DBException e) {
-      System.out.println("Failed to insert " + key);
-      e.printStackTrace();
-      return Status.ERROR;
-    } catch (IOException e) {
-      System.out.println("Failed to insert " + key);
-      e.printStackTrace();
-      return Status.ERROR;
-    }
+    String value = "100";
+    cupdate(key, value);
     return Status.OK;
   }
 
@@ -248,42 +187,11 @@ public class LevelDbJniClientN extends DB {
    * @return Zero on success, a non-zero error code on error. See this class's
    *         description for a discussion of error codes.
    */
+  private native void cscan(String startkey, int recordcount);
   @Override
   public Status scan(String table, String startkey, int recordcount,
       Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
-    DBIterator iterator = db.iterator();
-    int count = 0;
-    try {
-      iterator.seek(startkey.getBytes());
-      while (iterator.hasNext() && count < recordcount) {
-        String key = iterator.peekNext().getKey().toString();
-        if (fields == null || fields.contains(key)) {
-          HashMap<String, String> value;
-          value = (HashMap<String, String>) bytesToMap(iterator
-              .peekNext().getValue());
-          HashMap<String, ByteIterator> byteValues = new HashMap<String, ByteIterator>();
-          StringByteIterator.putAllAsByteIterators(byteValues, value);
-          result.addElement(byteValues);
-        }
-        iterator.next();
-        count += 1;
-      }
-    } catch (IOException e) {
-      System.out.println("Failed to scan");
-      e.printStackTrace();
-      return Status.ERROR;
-    } catch (ClassNotFoundException e) {
-      System.out.println("Failed to scan");
-      e.printStackTrace();
-      return Status.ERROR;
-    } finally {
-      try {
-        iterator.close();
-      } catch (IOException e) {
-        System.out.println("Failed to close iterator");
-        e.printStackTrace();
-      }
-    }
+    cscan(startkey, recordcount);
     return Status.OK;
   }
 }
