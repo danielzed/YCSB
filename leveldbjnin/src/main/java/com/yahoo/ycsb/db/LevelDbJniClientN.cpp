@@ -1,5 +1,5 @@
 #include <jni.h>
-#include "leveldb/env.h"
+
 #include "LevelDbJniClientN.h"
 #include <leveldb/db.h>
 #include <thread>
@@ -11,7 +11,7 @@ JNIEXPORT void JNICALL Java_com_yahoo_ycsb_db_LevelDbJniClientN_cinit(JNIEnv *, 
 {
 leveldb::Options options;
 options.create_if_missing = true;
-leveldb::DB::Open(options,"./leveldb_database",&db);
+leveldb::DB::Open(options,"/mnt/f2fs/leveldb_database",&db);
 }
 JNIEXPORT void JNICALL Java_com_yahoo_ycsb_db_LevelDbJniClientN_ccleanup(JNIEnv *, jobject)
 {
